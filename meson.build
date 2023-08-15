@@ -27,6 +27,7 @@ executable(
 		'pool-buffer.c',
 		'render.c',
 		protos_src,
+		'box.c',
 	],
 	dependencies: [
 		cairo,

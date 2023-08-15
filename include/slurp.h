@@ -5,18 +5,12 @@
 #include <stdint.h>
 #include <wayland-client.h>
 
+#include "box.h"
 #include "pool-buffer.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 
 #define TOUCH_ID_EMPTY -1
-
-struct slurp_box {
-	int32_t x, y;
-	int32_t width, height;
-	char *label;
-	struct wl_list link;
-};
 
 struct slurp_selection {
 	struct slurp_output *current_output;
@@ -54,6 +48,7 @@ struct slurp_state {
 	bool display_dimensions;
 	bool single_point;
 	bool restrict_selection;
+	bool crosshairs;
 	struct wl_list boxes; // slurp_box::link
 	bool fixed_aspect_ratio;
 	double aspect_ratio;  // h / w
