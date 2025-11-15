@@ -721,7 +721,7 @@ static const char usage[] =
 	"  -o           Select a display output.\n"
 	"  -p           Select a single point.\n"
 	"  -r           Restrict selection to predefined boxes.\n"
-	"  -C           Reselect until enter key is pressed.\n"
+	"  -C           Wait until enter key is pressed.\n"
 	"  -a w:h       Force aspect ratio.\n";
 
 uint32_t parse_color(const char *color) {
