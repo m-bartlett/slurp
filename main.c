@@ -334,6 +334,59 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 		case XKB_KEY_Return:
 			state->running = false;
 			break;
+
+		case XKB_KEY_Left:
+		case XKB_KEY_Right:
+		case XKB_KEY_Up:
+		case XKB_KEY_Down: {
+			struct slurp_selection *current = slurp_seat_current_selection(seat);
+			if (!current->has_selection) {
+				break;
+			}
+
+			// Check if Shift is pressed
+			bool shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
+				XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
+
+			if (shift_pressed) {
+				// Shift + arrow keys: modify anchor (top-left corner) to move selection
+				switch (keysym) {
+				case XKB_KEY_Left:
+					current->anchor_x -= 1;
+					break;
+				case XKB_KEY_Right:
+					current->anchor_x += 1;
+					break;
+				case XKB_KEY_Up:
+					current->anchor_y -= 1;
+					break;
+				case XKB_KEY_Down:
+					current->anchor_y += 1;
+					break;
+				}
+			} else {
+				// Arrow keys: modify x, y (bottom-right corner) to resize selection
+				switch (keysym) {
+				case XKB_KEY_Left:
+					current->x -= 1;
+					break;
+				case XKB_KEY_Right:
+					current->x += 1;
+					break;
+				case XKB_KEY_Up:
+					current->y -= 1;
+					break;
+				case XKB_KEY_Down:
+					current->y += 1;
+					break;
+				}
+			}
+
+			// Recompute the selection based on the new coordinates
+			handle_active_selection_motion(seat, current);
+			seat_set_outputs_dirty(seat);
+			break;
+		}
 		}
 		break;
 
