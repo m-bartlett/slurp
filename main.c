@@ -422,6 +422,10 @@ static void keyboard_handle_repeat_info(void *data, struct wl_keyboard *wl_keybo
 	// We don't need to do anything with this info since the compositor
 	// handles key repeat automatically. This callback is here for protocol
 	// compatibility with wl_keyboard version 4+.
+	(void)data;
+	(void)wl_keyboard;
+	(void)rate;
+	(void)delay;
 }
 
 static const struct wl_keyboard_listener keyboard_listener = {
