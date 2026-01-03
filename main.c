@@ -309,6 +309,7 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 	case WL_KEYBOARD_KEY_STATE_PRESSED:
 		switch (keysym) {
 		case XKB_KEY_Escape:
+		case XKB_KEY_q:
 			seat->pointer_selection.has_selection = false;
 			seat->touch_selection.has_selection = false;
 			state->edit_anchor = false;
@@ -416,12 +417,20 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
 			mods_locked, 0, 0, group);
 }
 
+static void keyboard_handle_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
+		int32_t rate, int32_t delay) {
+	// We don't need to do anything with this info since the compositor
+	// handles key repeat automatically. This callback is here for protocol
+	// compatibility with wl_keyboard version 4+.
+}
+
 static const struct wl_keyboard_listener keyboard_listener = {
 	.keymap = keyboard_handle_keymap,
 	.enter = noop,
 	.leave = noop,
 	.key = keyboard_handle_key,
 	.modifiers = keyboard_handle_modifiers,
+	.repeat_info = keyboard_handle_repeat_info,
 };
 
 static void touch_handle_down(void *data, struct wl_touch *touch,
@@ -742,7 +751,7 @@ static void handle_global(void *data, struct wl_registry *registry,
 			&zwlr_layer_shell_v1_interface, 1);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
 		struct wl_seat *wl_seat =
-			wl_registry_bind(registry, name, &wl_seat_interface, 1);
+			wl_registry_bind(registry, name, &wl_seat_interface, 4);
 		create_seat(state, wl_seat);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
 		struct wl_output *wl_output =
