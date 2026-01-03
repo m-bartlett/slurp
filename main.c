@@ -349,7 +349,7 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 				XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
 
 			if (shift_pressed) {
-				// Shift + arrow keys: modify anchor (top-left corner) to move selection
+				// Shift + arrow keys: modify anchor point to move selection
 				switch (keysym) {
 				case XKB_KEY_Left:
 					current->anchor_x -= 1;
@@ -365,7 +365,7 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 					break;
 				}
 			} else {
-				// Arrow keys: modify x, y (bottom-right corner) to resize selection
+				// Arrow keys: modify current position to resize selection
 				switch (keysym) {
 				case XKB_KEY_Left:
 					current->x -= 1;
