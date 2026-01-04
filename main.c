@@ -512,7 +512,8 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 
 static void seat_handle_name(void *data, struct wl_seat *wl_seat,
 		const char *name) {
-	// We don't need to do anything with the seat name
+	// This callback is required for wl_seat version 2+ protocol compatibility
+	// but we don't need to handle the seat name.
 	(void)data;
 	(void)wl_seat;
 	(void)name;
