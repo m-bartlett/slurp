@@ -510,8 +510,17 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 	}
 }
 
+static void seat_handle_name(void *data, struct wl_seat *wl_seat,
+		const char *name) {
+	// We don't need to do anything with the seat name
+	(void)data;
+	(void)wl_seat;
+	(void)name;
+}
+
 static const struct wl_seat_listener seat_listener = {
 	.capabilities = seat_handle_capabilities,
+	.name = seat_handle_name,
 };
 
 static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
