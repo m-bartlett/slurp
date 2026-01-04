@@ -100,9 +100,7 @@ struct slurp_seat {
 	int32_t repeat_rate;
 	int32_t repeat_delay;
 	uint32_t repeat_key;
-	xkb_keysym_t repeat_sym;
 	bool repeat_active;
-	int repeat_timer_fd;
 
 	//selection (pointer/touch):
 
