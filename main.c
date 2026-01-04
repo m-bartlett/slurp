@@ -19,6 +19,11 @@
 #define SELECTION_COLOR 0x00000000
 #define FONT_FAMILY "sans-serif"
 
+// Wayland keyboard key state for repeated keys (not in all headers)
+#ifndef WL_KEYBOARD_KEY_STATE_REPEATED
+#define WL_KEYBOARD_KEY_STATE_REPEATED 2
+#endif
+
 static void noop() {
 	// This space intentionally left blank
 }
@@ -307,7 +312,7 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 
 	switch (key_state) {
 	case WL_KEYBOARD_KEY_STATE_PRESSED:
-	case 2: // WL_KEYBOARD_KEY_STATE_REPEATED
+	case WL_KEYBOARD_KEY_STATE_REPEATED:
 		switch (keysym) {
 		case XKB_KEY_Escape:
 		case XKB_KEY_q:
