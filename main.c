@@ -765,7 +765,7 @@ static void handle_global(void *data, struct wl_registry *registry,
 			&wl_shm_interface, 1);
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
 		state->layer_shell = wl_registry_bind(registry, name,
-			&zwlr_layer_shell_v1_interface, 1);
+			&zwlr_layer_shell_v1_interface, 4);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
 		struct wl_seat *wl_seat =
 			wl_registry_bind(registry, name, &wl_seat_interface, 4);
@@ -1144,7 +1144,7 @@ int main(int argc, char *argv[]) {
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM);
-		zwlr_layer_surface_v1_set_keyboard_interactivity(output->layer_surface, true);
+		zwlr_layer_surface_v1_set_keyboard_interactivity(output->layer_surface, 1);
 		zwlr_layer_surface_v1_set_exclusive_zone(output->layer_surface, -1);
 		wl_surface_commit(output->surface);
 	}
