@@ -1237,13 +1237,14 @@ int main(int argc, char *argv[]) {
 		wl_display_flush(state.display);
 
 		// Set up poll for Wayland fd and all timer fds
-		struct pollfd fds[10];  // Support up to 10 seats
+		#define MAX_POLL_FDS 10
+		struct pollfd fds[MAX_POLL_FDS];  // Support up to 10 seats
 		int nfds = 1;
 		fds[0].fd = wl_fd;
 		fds[0].events = POLLIN;
 
 		wl_list_for_each(seat, &state.seats, link) {
-			if (seat->repeat_timer_fd >= 0 && nfds < 10) {
+			if (seat->repeat_timer_fd >= 0 && nfds < MAX_POLL_FDS) {
 				fds[nfds].fd = seat->repeat_timer_fd;
 				fds[nfds].events = POLLIN;
 				nfds++;
@@ -1251,9 +1252,12 @@ int main(int argc, char *argv[]) {
 		}
 
 		int ret = poll(fds, nfds, -1);
-		if (ret < 0 && errno != EINTR) {
+		if (ret < 0) {
 			wl_display_cancel_read(state.display);
-			break;
+			if (errno != EINTR) {
+				break;
+			}
+			continue;
 		}
 
 		// Check if Wayland has events
@@ -1270,8 +1274,8 @@ int main(int argc, char *argv[]) {
 			if (seat->repeat_timer_fd >= 0 && fd_idx < nfds && fds[fd_idx].revents & POLLIN) {
 				// Timer fired - handle key repeat
 				uint64_t expirations;
-				read(seat->repeat_timer_fd, &expirations, sizeof(expirations));
-				if (seat->repeat_active) {
+				ssize_t n = read(seat->repeat_timer_fd, &expirations, sizeof(expirations));
+				if (n == sizeof(expirations) && seat->repeat_active) {
 					handle_key_repeat(seat, seat->repeat_sym);
 				}
 			}
