@@ -345,6 +345,9 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 				break;
 			}
 
+			// Adjustment step size (pixels per keypress)
+			const int32_t step = 5;
+
 			// Check if Shift is pressed
 			bool shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
 				XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
@@ -353,32 +356,32 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 				// Shift + arrow keys: modify anchor point to move selection
 				switch (keysym) {
 				case XKB_KEY_Left:
-					current->anchor_x -= 1;
+					current->anchor_x -= step;
 					break;
 				case XKB_KEY_Right:
-					current->anchor_x += 1;
+					current->anchor_x += step;
 					break;
 				case XKB_KEY_Up:
-					current->anchor_y -= 1;
+					current->anchor_y -= step;
 					break;
 				case XKB_KEY_Down:
-					current->anchor_y += 1;
+					current->anchor_y += step;
 					break;
 				}
 			} else {
 				// Arrow keys: modify current position to resize selection
 				switch (keysym) {
 				case XKB_KEY_Left:
-					current->x -= 1;
+					current->x -= step;
 					break;
 				case XKB_KEY_Right:
-					current->x += 1;
+					current->x += step;
 					break;
 				case XKB_KEY_Up:
-					current->y -= 1;
+					current->y -= step;
 					break;
 				case XKB_KEY_Down:
-					current->y += 1;
+					current->y += step;
 					break;
 				}
 			}
