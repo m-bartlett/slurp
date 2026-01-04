@@ -386,6 +386,7 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 			// Recompute the selection based on the new coordinates
 			handle_active_selection_motion(seat, current);
 			seat_set_outputs_dirty(seat);
+			wl_display_flush(state->display);
 			break;
 		}
 		}
