@@ -97,6 +97,10 @@ struct slurp_seat {
 
 	// keyboard:
 	struct wl_keyboard *wl_keyboard;
+	int32_t repeat_rate;
+	int32_t repeat_delay;
+	uint32_t repeat_key;
+	bool repeat_active;
 
 	//selection (pointer/touch):
 

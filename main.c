@@ -345,9 +345,6 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 				break;
 			}
 
-			// Adjustment step size (pixels per keypress)
-			const int32_t step = 5;
-
 			// Check if Shift is pressed
 			bool shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
 				XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
@@ -356,32 +353,32 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 				// Shift + arrow keys: modify anchor point to move selection
 				switch (keysym) {
 				case XKB_KEY_Left:
-					current->anchor_x -= step;
+					current->anchor_x -= 1;
 					break;
 				case XKB_KEY_Right:
-					current->anchor_x += step;
+					current->anchor_x += 1;
 					break;
 				case XKB_KEY_Up:
-					current->anchor_y -= step;
+					current->anchor_y -= 1;
 					break;
 				case XKB_KEY_Down:
-					current->anchor_y += step;
+					current->anchor_y += 1;
 					break;
 				}
 			} else {
 				// Arrow keys: modify current position to resize selection
 				switch (keysym) {
 				case XKB_KEY_Left:
-					current->x -= step;
+					current->x -= 1;
 					break;
 				case XKB_KEY_Right:
-					current->x += step;
+					current->x += 1;
 					break;
 				case XKB_KEY_Up:
-					current->y -= step;
+					current->y -= 1;
 					break;
 				case XKB_KEY_Down:
-					current->y += step;
+					current->y += 1;
 					break;
 				}
 			}
@@ -422,13 +419,12 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
 
 static void keyboard_handle_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
 		int32_t rate, int32_t delay) {
-	// We don't need to do anything with this info since the compositor
-	// handles key repeat automatically. This callback is here for protocol
-	// compatibility with wl_keyboard version 4+.
-	(void)data;
+	struct slurp_seat *seat = data;
 	(void)wl_keyboard;
-	(void)rate;
-	(void)delay;
+	
+	// Store the repeat rate and delay for client-side repeat handling
+	seat->repeat_rate = rate;
+	seat->repeat_delay = delay;
 }
 
 static const struct wl_keyboard_listener keyboard_listener = {
@@ -536,6 +532,9 @@ static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
 	seat->state = state;
 	seat->wl_seat = wl_seat;
 	seat->touch_id = TOUCH_ID_EMPTY;
+	seat->repeat_rate = 25; // Default 25 repeats per second
+	seat->repeat_delay = 600; // Default 600ms initial delay
+	seat->repeat_active = false;
 	wl_list_insert(&state->seats, &seat->link);
 	wl_seat_add_listener(wl_seat, &seat_listener, seat);
 }
