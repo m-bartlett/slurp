@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/timerfd.h>
 #include <unistd.h>
+#include <poll.h>
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
@@ -18,11 +20,6 @@
 #define BORDER_COLOR 0x000000FF
 #define SELECTION_COLOR 0x00000000
 #define FONT_FAMILY "sans-serif"
-
-// Wayland keyboard key state for repeated keys (not in all headers)
-#ifndef WL_KEYBOARD_KEY_STATE_REPEATED
-#define WL_KEYBOARD_KEY_STATE_REPEATED 2
-#endif
 
 static void noop() {
 	// This space intentionally left blank
@@ -303,6 +300,87 @@ static void recompute_selection(struct slurp_seat *seat) {
 	}
 }
 
+static void handle_key_repeat(struct slurp_seat *seat, xkb_keysym_t keysym) {
+	struct slurp_selection *current = slurp_seat_current_selection(seat);
+	if (!current->has_selection) {
+		return;
+	}
+
+	// Check if Shift is pressed
+	bool shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
+		XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
+
+	if (shift_pressed) {
+		// Shift + arrow keys: modify anchor point to move selection
+		switch (keysym) {
+		case XKB_KEY_Left:
+			current->anchor_x -= 1;
+			break;
+		case XKB_KEY_Right:
+			current->anchor_x += 1;
+			break;
+		case XKB_KEY_Up:
+			current->anchor_y -= 1;
+			break;
+		case XKB_KEY_Down:
+			current->anchor_y += 1;
+			break;
+		default:
+			return;
+		}
+	} else {
+		// Arrow keys: modify current position to resize selection
+		switch (keysym) {
+		case XKB_KEY_Left:
+			current->x -= 1;
+			break;
+		case XKB_KEY_Right:
+			current->x += 1;
+			break;
+		case XKB_KEY_Up:
+			current->y -= 1;
+			break;
+		case XKB_KEY_Down:
+			current->y += 1;
+			break;
+		default:
+			return;
+		}
+	}
+
+	// Recompute the selection based on the new coordinates
+	handle_active_selection_motion(seat, current);
+	seat_set_outputs_dirty(seat);
+	wl_display_flush(seat->state->display);
+}
+
+static void stop_key_repeat(struct slurp_seat *seat) {
+	if (seat->repeat_timer_fd >= 0) {
+		struct itimerspec its = { {0, 0}, {0, 0} };
+		timerfd_settime(seat->repeat_timer_fd, 0, &its, NULL);
+		seat->repeat_active = false;
+	}
+}
+
+static void start_key_repeat(struct slurp_seat *seat, uint32_t key, xkb_keysym_t keysym) {
+	if (seat->repeat_timer_fd < 0 || seat->repeat_rate <= 0) {
+		return;
+	}
+
+	seat->repeat_key = key;
+	seat->repeat_sym = keysym;
+	seat->repeat_active = true;
+
+	// Set up timer: first fire after repeat_delay ms, then every (1000/repeat_rate) ms
+	struct itimerspec its;
+	its.it_value.tv_sec = seat->repeat_delay / 1000;
+	its.it_value.tv_nsec = (seat->repeat_delay % 1000) * 1000000;
+	its.it_interval.tv_sec = 0;
+	its.it_interval.tv_nsec = (1000000000 / seat->repeat_rate);
+	
+	timerfd_settime(seat->repeat_timer_fd, 0, &its, NULL);
+}
+
 static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 		const uint32_t serial, const uint32_t time, const uint32_t key,
 		const uint32_t key_state) {
@@ -312,7 +390,6 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 
 	switch (key_state) {
 	case WL_KEYBOARD_KEY_STATE_PRESSED:
-	case WL_KEYBOARD_KEY_STATE_REPEATED:
 		switch (keysym) {
 		case XKB_KEY_Escape:
 		case XKB_KEY_q:
@@ -351,48 +428,11 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 				break;
 			}
 
-			// Check if Shift is pressed
-			bool shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
-				XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
-
-			if (shift_pressed) {
-				// Shift + arrow keys: modify anchor point to move selection
-				switch (keysym) {
-				case XKB_KEY_Left:
-					current->anchor_x -= 1;
-					break;
-				case XKB_KEY_Right:
-					current->anchor_x += 1;
-					break;
-				case XKB_KEY_Up:
-					current->anchor_y -= 1;
-					break;
-				case XKB_KEY_Down:
-					current->anchor_y += 1;
-					break;
-				}
-			} else {
-				// Arrow keys: modify current position to resize selection
-				switch (keysym) {
-				case XKB_KEY_Left:
-					current->x -= 1;
-					break;
-				case XKB_KEY_Right:
-					current->x += 1;
-					break;
-				case XKB_KEY_Up:
-					current->y -= 1;
-					break;
-				case XKB_KEY_Down:
-					current->y += 1;
-					break;
-				}
-			}
-
-			// Recompute the selection based on the new coordinates
-			handle_active_selection_motion(seat, current);
-			seat_set_outputs_dirty(seat);
-			wl_display_flush(state->display);
+			// Handle the initial key press
+			handle_key_repeat(seat, keysym);
+			
+			// Start the repeat timer for continuous adjustment
+			start_key_repeat(seat, key, keysym);
 			break;
 		}
 		}
@@ -408,6 +448,15 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 			if (!state->fixed_aspect_ratio) {
 				state->aspect_ratio = 0;
 				recompute_selection(seat);
+			}
+			break;
+		case XKB_KEY_Left:
+		case XKB_KEY_Right:
+		case XKB_KEY_Up:
+		case XKB_KEY_Down:
+			// Stop repeat timer when arrow key is released
+			if (seat->repeat_active && seat->repeat_key == key) {
+				stop_key_repeat(seat);
 			}
 			break;
 		}
@@ -542,6 +591,10 @@ static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
 	seat->repeat_rate = 25; // Default 25 repeats per second
 	seat->repeat_delay = 600; // Default 600ms initial delay
 	seat->repeat_active = false;
+	seat->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+	if (seat->repeat_timer_fd < 0) {
+		fprintf(stderr, "failed to create repeat timer: %s\n", strerror(errno));
+	}
 	wl_list_insert(&state->seats, &seat->link);
 	wl_seat_add_listener(wl_seat, &seat_listener, seat);
 }
@@ -554,6 +607,9 @@ static void destroy_seat(struct slurp_seat *seat) {
 	}
 	if (seat->wl_keyboard) {
 		wl_keyboard_destroy(seat->wl_keyboard);
+	}
+	if (seat->repeat_timer_fd >= 0) {
+		close(seat->repeat_timer_fd);
 	}
 	xkb_state_unref(seat->xkb_state);
 	xkb_keymap_unref(seat->xkb_keymap);
@@ -1171,8 +1227,62 @@ int main(int argc, char *argv[]) {
 	}
 
 	state.running = true;
-	while (state.running && wl_display_dispatch(state.display) != -1) {
-		// This space intentionally left blank
+	int wl_fd = wl_display_get_fd(state.display);
+	
+	while (state.running) {
+		// Prepare to dispatch pending events
+		while (wl_display_prepare_read(state.display) != 0) {
+			wl_display_dispatch_pending(state.display);
+		}
+		wl_display_flush(state.display);
+
+		// Set up poll for Wayland fd and all timer fds
+		#define MAX_POLL_FDS 10
+		struct pollfd fds[MAX_POLL_FDS];  // Support up to 10 seats
+		int nfds = 1;
+		fds[0].fd = wl_fd;
+		fds[0].events = POLLIN;
+
+		wl_list_for_each(seat, &state.seats, link) {
+			if (seat->repeat_timer_fd >= 0 && nfds < MAX_POLL_FDS) {
+				fds[nfds].fd = seat->repeat_timer_fd;
+				fds[nfds].events = POLLIN;
+				nfds++;
+			}
+		}
+
+		int ret = poll(fds, nfds, -1);
+		if (ret < 0) {
+			wl_display_cancel_read(state.display);
+			if (errno != EINTR) {
+				break;
+			}
+			continue;
+		}
+
+		// Check if Wayland has events
+		if (fds[0].revents & POLLIN) {
+			wl_display_read_events(state.display);
+			wl_display_dispatch_pending(state.display);
+		} else {
+			wl_display_cancel_read(state.display);
+		}
+
+		// Check timer events
+		int fd_idx = 1;
+		wl_list_for_each(seat, &state.seats, link) {
+			if (seat->repeat_timer_fd >= 0 && fd_idx < nfds && fds[fd_idx].revents & POLLIN) {
+				// Timer fired - handle key repeat
+				uint64_t expirations;
+				ssize_t n = read(seat->repeat_timer_fd, &expirations, sizeof(expirations));
+				if (n == sizeof(expirations) && seat->repeat_active) {
+					handle_key_repeat(seat, seat->repeat_sym);
+				}
+			}
+			if (seat->repeat_timer_fd >= 0) {
+				fd_idx++;
+			}
+		}
 	}
 
 	if (state.result.width == 0 && state.result.height == 0) {
