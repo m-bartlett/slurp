@@ -997,7 +997,7 @@ int main(int argc, char *argv[]) {
 
 	if (state.single_point && state.confirm_selection) {
 		fprintf(stderr, "-p and -C cannot be used together\n");
-    return EXIT_FAILURE;
+    	return EXIT_FAILURE;
 	}
   
 	if (!acquire_lock()) {
