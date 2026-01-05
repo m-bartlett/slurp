@@ -744,7 +744,7 @@ static const char usage[] =
 	"  -r           Restrict selection to predefined boxes.\n"
 	"  -C           Confirm selection with enter key.\n"
 	"  -a w:h       Force aspect ratio.\n"
-  "  -x           Display crosshairs across active display output.\n";
+    "  -x           Display crosshairs across active display output.\n";
 
 uint32_t parse_color(const char *color) {
 	if (color[0] == '#') {
