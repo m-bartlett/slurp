@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/timerfd.h>
 #include <unistd.h>
+#include <poll.h>
 #include <wayland-cursor.h>
 #include <xkbcommon/xkbcommon.h>
 #include <linux/input-event-codes.h>
@@ -309,6 +311,87 @@ static void recompute_selection(struct slurp_seat *seat) {
 	}
 }
 
+static void handle_key_repeat(struct slurp_seat *seat, xkb_keysym_t keysym) {
+	struct slurp_selection *current = slurp_seat_current_selection(seat);
+	if (!current->has_selection) {
+		return;
+	}
+
+	// Check if Shift is pressed
+	bool shift_pressed = xkb_state_mod_name_is_active(seat->xkb_state,
+		XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE);
+
+	if (shift_pressed) {
+		// Shift + arrow keys: modify anchor point to move selection
+		switch (keysym) {
+		case XKB_KEY_Left:
+			current->anchor_x -= 1;
+			break;
+		case XKB_KEY_Right:
+			current->anchor_x += 1;
+			break;
+		case XKB_KEY_Up:
+			current->anchor_y -= 1;
+			break;
+		case XKB_KEY_Down:
+			current->anchor_y += 1;
+			break;
+		default:
+			return;
+		}
+	} else {
+		// Arrow keys: modify current position to resize selection
+		switch (keysym) {
+		case XKB_KEY_Left:
+			current->x -= 1;
+			break;
+		case XKB_KEY_Right:
+			current->x += 1;
+			break;
+		case XKB_KEY_Up:
+			current->y -= 1;
+			break;
+		case XKB_KEY_Down:
+			current->y += 1;
+			break;
+		default:
+			return;
+		}
+	}
+
+	// Recompute the selection based on the new coordinates
+	handle_active_selection_motion(seat, current);
+	seat_set_outputs_dirty(seat);
+	wl_display_flush(seat->state->display);
+}
+
+static void stop_key_repeat(struct slurp_seat *seat) {
+	if (seat->repeat_timer_fd >= 0) {
+		struct itimerspec its = { {0, 0}, {0, 0} };
+		timerfd_settime(seat->repeat_timer_fd, 0, &its, NULL);
+		seat->repeat_active = false;
+	}
+}
+
+static void start_key_repeat(struct slurp_seat *seat, uint32_t key, xkb_keysym_t keysym) {
+	if (seat->repeat_timer_fd < 0 || seat->repeat_rate <= 0) {
+		return;
+	}
+
+	seat->repeat_key = key;
+	seat->repeat_sym = keysym;
+	seat->repeat_active = true;
+
+	// Set up timer: first fire after repeat_delay ms, then every (1000/repeat_rate) ms
+	struct itimerspec its;
+	its.it_value.tv_sec = seat->repeat_delay / 1000;
+	its.it_value.tv_nsec = (seat->repeat_delay % 1000) * 1000000;
+	its.it_interval.tv_sec = 0;
+	its.it_interval.tv_nsec = (1000000000 / seat->repeat_rate);
+	
+	timerfd_settime(seat->repeat_timer_fd, 0, &its, NULL);
+}
+
 static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 		const uint32_t serial, const uint32_t time, const uint32_t key,
 		const uint32_t key_state) {
@@ -344,6 +427,23 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
 		case XKB_KEY_Return:
 			state->running = false;
 			break;
+
+		case XKB_KEY_Left:
+		case XKB_KEY_Right:
+		case XKB_KEY_Up:
+		case XKB_KEY_Down: {
+			struct slurp_selection *current = slurp_seat_current_selection(seat);
+			if (!current->has_selection) {
+				break;
+			}
+
+			// Handle the initial key press
+			handle_key_repeat(seat, keysym);
+			
+			// Start the repeat timer for continuous adjustment
+			start_key_repeat(seat, key, keysym);
+			break;
+		}
 		}
 		break;
 
@@ -361,6 +461,15 @@ static void keyboard_handle_key(void *data, struct wl_keyboard *wl_keyboard,
         }
 			}
 			break;
+		case XKB_KEY_Left:
+		case XKB_KEY_Right:
+		case XKB_KEY_Up:
+		case XKB_KEY_Down:
+			// Stop repeat timer when arrow key is released
+			if (seat->repeat_active && seat->repeat_key == key) {
+				stop_key_repeat(seat);
+			}
+			break;
 		}
 	}
 
@@ -375,12 +484,23 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
 			mods_locked, 0, 0, group);
 }
 
+static void keyboard_handle_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
+		int32_t rate, int32_t delay) {
+	struct slurp_seat *seat = data;
+	(void)wl_keyboard;
+	
+	// Store the repeat rate and delay for client-side repeat handling
+	seat->repeat_rate = rate;
+	seat->repeat_delay = delay;
+}
+
 static const struct wl_keyboard_listener keyboard_listener = {
 	.keymap = keyboard_handle_keymap,
 	.enter = noop,
 	.leave = noop,
 	.key = keyboard_handle_key,
 	.modifiers = keyboard_handle_modifiers,
+	.repeat_info = keyboard_handle_repeat_info,
 };
 
 static void touch_handle_down(void *data, struct wl_touch *touch,
@@ -456,8 +576,18 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 	}
 }
 
+static void seat_handle_name(void *data, struct wl_seat *wl_seat,
+		const char *name) {
+	// This callback is required for wl_seat version 2+ protocol compatibility
+	// but we don't need to handle the seat name.
+	(void)data;
+	(void)wl_seat;
+	(void)name;
+}
+
 static const struct wl_seat_listener seat_listener = {
 	.capabilities = seat_handle_capabilities,
+	.name = seat_handle_name,
 };
 
 static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
@@ -469,6 +599,13 @@ static void create_seat(struct slurp_state *state, struct wl_seat *wl_seat) {
 	seat->state = state;
 	seat->wl_seat = wl_seat;
 	seat->touch_id = TOUCH_ID_EMPTY;
+	seat->repeat_rate = 25; // Default 25 repeats per second
+	seat->repeat_delay = 600; // Default 600ms initial delay
+	seat->repeat_active = false;
+	seat->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+	if (seat->repeat_timer_fd < 0) {
+		fprintf(stderr, "failed to create repeat timer: %s\n", strerror(errno));
+	}
 	wl_list_insert(&state->seats, &seat->link);
 	wl_seat_add_listener(wl_seat, &seat_listener, seat);
 }
@@ -481,6 +618,9 @@ static void destroy_seat(struct slurp_seat *seat) {
 	}
 	if (seat->wl_keyboard) {
 		wl_keyboard_destroy(seat->wl_keyboard);
+	}
+	if (seat->repeat_timer_fd >= 0) {
+		close(seat->repeat_timer_fd);
 	}
 	xkb_state_unref(seat->xkb_state);
 	xkb_keymap_unref(seat->xkb_keymap);
@@ -704,10 +844,10 @@ static void handle_global(void *data, struct wl_registry *registry,
 			&wl_shm_interface, 1);
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
 		state->layer_shell = wl_registry_bind(registry, name,
-			&zwlr_layer_shell_v1_interface, 1);
+			&zwlr_layer_shell_v1_interface, 4);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
 		struct wl_seat *wl_seat =
-			wl_registry_bind(registry, name, &wl_seat_interface, 1);
+			wl_registry_bind(registry, name, &wl_seat_interface, 4);
 		create_seat(state, wl_seat);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
 		struct wl_output *wl_output =
@@ -1088,7 +1228,7 @@ int main(int argc, char *argv[]) {
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM);
-		zwlr_layer_surface_v1_set_keyboard_interactivity(output->layer_surface, true);
+		zwlr_layer_surface_v1_set_keyboard_interactivity(output->layer_surface, 1);
 		zwlr_layer_surface_v1_set_exclusive_zone(output->layer_surface, -1);
 		wl_surface_commit(output->surface);
 	}
@@ -1113,8 +1253,62 @@ int main(int argc, char *argv[]) {
 	}
 
 	state.running = true;
-	while (state.running && wl_display_dispatch(state.display) != -1) {
-		// This space intentionally left blank
+	int wl_fd = wl_display_get_fd(state.display);
+	
+	while (state.running) {
+		// Prepare to dispatch pending events
+		while (wl_display_prepare_read(state.display) != 0) {
+			wl_display_dispatch_pending(state.display);
+		}
+		wl_display_flush(state.display);
+
+		// Set up poll for Wayland fd and all timer fds
+		#define MAX_POLL_FDS 10
+		struct pollfd fds[MAX_POLL_FDS];  // Support up to 10 seats
+		int nfds = 1;
+		fds[0].fd = wl_fd;
+		fds[0].events = POLLIN;
+
+		wl_list_for_each(seat, &state.seats, link) {
+			if (seat->repeat_timer_fd >= 0 && nfds < MAX_POLL_FDS) {
+				fds[nfds].fd = seat->repeat_timer_fd;
+				fds[nfds].events = POLLIN;
+				nfds++;
+			}
+		}
+
+		int ret = poll(fds, nfds, -1);
+		if (ret < 0) {
+			wl_display_cancel_read(state.display);
+			if (errno != EINTR) {
+				break;
+			}
+			continue;
+		}
+
+		// Check if Wayland has events
+		if (fds[0].revents & POLLIN) {
+			wl_display_read_events(state.display);
+			wl_display_dispatch_pending(state.display);
+		} else {
+			wl_display_cancel_read(state.display);
+		}
+
+		// Check timer events
+		int fd_idx = 1;
+		wl_list_for_each(seat, &state.seats, link) {
+			if (seat->repeat_timer_fd >= 0 && fd_idx < nfds && fds[fd_idx].revents & POLLIN) {
+				// Timer fired - handle key repeat
+				uint64_t expirations;
+				ssize_t n = read(seat->repeat_timer_fd, &expirations, sizeof(expirations));
+				if (n == sizeof(expirations) && seat->repeat_active) {
+					handle_key_repeat(seat, seat->repeat_sym);
+				}
+			}
+			if (seat->repeat_timer_fd >= 0) {
+				fd_idx++;
+			}
+		}
 	}
 
 	char *result_str = 0;
