@@ -32,17 +32,17 @@ held, the selection is moved instead of being resized.
 	Display dimensions of selection.
 
 *-b* _color_
-	Set background color. See *COLORS* for more detail.
+	Set background color. Default is #FFFFFF40. See *COLORS* for more detail.
 
 *-c* _color_
-	Set border color. See *COLORS* for more detail.
+	Set border color. Default is #000000FF. See *COLORS* for more detail.
 
 *-s* _color_
-	Set selection color. See *COLORS* for more detail.
+	Set selection color. Default is #00000000. See *COLORS* for more detail.
 
 *-B* _color_
 	Set color for highlighting predefined rectangles from standard input when not
-	selected.
+	selected. Default is #FFFFFF40.
 
 *-F* _font family_
 	Set the font family name when displaying the dimensions box. Only useful
@@ -51,7 +51,7 @@ held, the selection is moved instead of being resized.
 	monospace, cursive and fantasy. It defaults to the sans-serif family name.
 
 *-w* _weight_
-	Set border weight.
+	Set border weight. Default is 2.
 
 *-f* _format_
 	Set format. See *FORMAT* for more detail.
@@ -77,6 +77,10 @@ held, the selection is moved instead of being resized.
 *-a* _width_:_height_
 	Force selections to have the given aspect ratio. This constraint is not
 	applied to the predefined rectangles specified using *-o*.
+
+*-x*
+	Draw fullscreen crosshairs on the display output containing the cursor until
+	a selection is started. This help aligning the origin of the selection.
 
 # COLORS
 
@@ -111,7 +115,7 @@ Interpreted sequences are:
 %o	The name of the output containing the top left corner, or "<unknown>" if
 	not known
 
-The default format is "%x,%y %wx%h\\n".
+The default format is "%x,%y %wx%h" followed by a newline.
 
 # KEYBOARD CONTROLS
 

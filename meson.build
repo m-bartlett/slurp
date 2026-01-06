@@ -1,7 +1,7 @@
 project(
 	'slurp',
 	'c',
-	version: '1.4.0',
+	version: '1.5.0',
 	license: 'MIT',
 	meson_version: '>=0.59.0',
 	default_options: ['c_std=c11', 'warning_level=2', 'werror=true'],
@@ -15,7 +15,7 @@ cairo = dependency('cairo')
 realtime = cc.find_library('rt')
 wayland_client = dependency('wayland-client')
 wayland_cursor = dependency('wayland-cursor')
-wayland_protos = dependency('wayland-protocols', version: '>=1.14')
+wayland_protos = dependency('wayland-protocols', version: '>=1.32')
 xkbcommon = dependency('xkbcommon')
 
 subdir('protocol')
@@ -24,8 +24,10 @@ executable(
 	'slurp',
 	[
 		'main.c',
+		'lock.c',
 		'pool-buffer.c',
 		'render.c',
+		'box.c',
 		protos_src,
 	],
 	dependencies: [
